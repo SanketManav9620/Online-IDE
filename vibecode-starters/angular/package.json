@@ -1,0 +1,7 @@
+{
+  "name": "angular-starter",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "echo Angular Starter"
+  }
+}
