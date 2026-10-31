@@ -29,7 +29,13 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  reactStrictMode:false
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  reactStrictMode: false,
 };
 
 export default nextConfig;

@@ -88,12 +88,16 @@ export async function POST(req: NextRequest) {
 
     const validHistory = Array.isArray(history)
       ? history.filter(
-          (msg: any) =>
-            msg &&
-            typeof msg === "object" &&
-            typeof msg.role === "string" &&
-            typeof msg.content === "string" &&
-            ["user", "assistant"].includes(msg.role),
+          (msg: unknown): msg is ChatMessage =>
+            Boolean(
+              msg &&
+                typeof msg === "object" &&
+                "role" in msg &&
+                "content" in msg &&
+                typeof (msg as Record<string, unknown>).role === "string" &&
+                typeof (msg as Record<string, unknown>).content === "string" &&
+                ["user", "assistant"].includes((msg as Record<string, unknown>).role as string)
+            )
         )
       : []
 

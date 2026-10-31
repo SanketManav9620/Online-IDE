@@ -51,9 +51,9 @@ export async function POST(request: NextRequest) {
         generatedAt: new Date().toISOString(),
       },
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Context analysis error:", error)
-    return NextResponse.json({ error: "Internal server error", message: error.message }, { status: 500 })
+    return NextResponse.json({ error: "Internal server error", message: (error as Error).message }, { status: 500 })
   }
 }
 
@@ -171,8 +171,8 @@ async function generateSuggestion(
     }
 
     return suggestion.trimEnd()
-  } catch (error: any) {
-    console.error("AI generation error details:", error?.message || error)
+  } catch (error: unknown) {
+    console.error("AI generation error details:", (error as Error)?.message || error)
     return "// AI suggestion unavailable"
   }
 }
