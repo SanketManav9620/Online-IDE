@@ -1,20 +1,9 @@
-import { readTemplateStructureFromJson, saveTemplateStructureToJson } from "@/features/playground/libs/path-to-json";
 import { db } from "@/lib/db";
 import { templatePaths } from "@/lib/template";
+import templatesData from "@/lib/templates-data.json";
+import { scanTemplateDirectory } from "@/features/playground/libs/path-to-json";
 import path from "path";
-import fs from "fs/promises";
-import { NextRequest } from "next/server";
-
-// Helper function to ensure valid JSON
-function validateJsonStructure(data: unknown): boolean {
-  try {
-    JSON.parse(JSON.stringify(data)); // Ensures it's serializable
-    return true;
-  } catch (error) {
-    console.error("Invalid JSON structure:", error);
-    return false;
-  }
-}
+import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
   request: NextRequest,
@@ -24,7 +13,7 @@ export async function GET(
   const id = param?.id;
 
   if (!id || id === "undefined") {
-    return Response.json({ error: "Missing or invalid playground ID" }, { status: 400 });
+    return NextResponse.json({ error: "Missing or invalid playground ID" }, { status: 400 });
   }
 
   let templateKey: keyof typeof templatePaths | undefined;
@@ -54,33 +43,20 @@ export async function GET(
   }
 
   try {
+    // 1. Instant check: bundled pre-generated template data (zero disk I/O, serverless-safe)
+    const bundledTemplate = (templatesData as Record<string, unknown>)[templateKey];
+    if (bundledTemplate) {
+      return NextResponse.json({ success: true, templateJson: bundledTemplate }, { status: 200 });
+    }
+
+    // 2. Fallback: in-memory directory scan without writing to read-only disk
     const relativeTemplatePath = templatePaths[templateKey];
     const inputPath = path.join(process.cwd(), relativeTemplatePath);
-    const outputDir = path.join(process.cwd(), "output");
-    const outputFile = path.join(outputDir, `${templateKey}.json`);
+    const result = await scanTemplateDirectory(inputPath);
 
-    await fs.mkdir(outputDir, { recursive: true });
-
-    // Save and read the template structure
-    await saveTemplateStructureToJson(inputPath, outputFile);
-    const result = await readTemplateStructureFromJson(outputFile);
-
-    // Validate the JSON structure before returning
-    if (!validateJsonStructure(result.items)) {
-      return Response.json({ error: "Invalid JSON structure" }, { status: 500 });
-    }
-
-    try {
-      await fs.unlink(outputFile);
-    } catch {
-      // Ignore cleanup error
-    }
-
-    return Response.json({ success: true, templateJson: result }, { status: 200 });
+    return NextResponse.json({ success: true, templateJson: result }, { status: 200 });
   } catch (error) {
-    console.error("Error generating template JSON:", error);
-    return Response.json({ error: "Failed to generate template" }, { status: 500 });
+    console.error("Error retrieving template JSON:", error);
+    return NextResponse.json({ error: "Failed to generate template" }, { status: 500 });
   }
 }
-
-
