@@ -21,46 +21,60 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const param = await params;
-  const id = param.id;
+  const id = param?.id;
 
-  if (!id) {
-    return Response.json({ error: "Missing playground ID" }, { status: 400 });
+  if (!id || id === "undefined") {
+    return Response.json({ error: "Missing or invalid playground ID" }, { status: 400 });
   }
 
-  const playground = await db.playground.findUnique({
-    where: { id },
-  });
+  let templateKey: keyof typeof templatePaths | undefined;
 
-  if (!playground) {
-    return Response.json({ error: "Playground not found" }, { status: 404 });
+  // 1. Check if ID itself is a template key (e.g. REACT, react, NEXTJS, VUE, etc.)
+  const upperId = id.toUpperCase() as keyof typeof templatePaths;
+  if (templatePaths[upperId]) {
+    templateKey = upperId;
+  } else {
+    // 2. Otherwise try querying DB for playground template
+    try {
+      const playground = await db.playground.findUnique({
+        where: { id },
+      });
+
+      if (playground && playground.template) {
+        templateKey = playground.template as keyof typeof templatePaths;
+      }
+    } catch (error) {
+      console.warn("Database lookup skipped or failed in template API:", error);
+    }
   }
 
-  const templateKey = playground.template as keyof typeof templatePaths;
-  const templatePath = templatePaths[templateKey];
-
-  if (!templatePath) {
-    return Response.json({ error: "Invalid template" }, { status: 404 });
+  // Fallback to REACT if templateKey not resolved
+  if (!templateKey || !templatePaths[templateKey]) {
+    templateKey = "REACT";
   }
 
   try {
-    const inputPath = path.join(process.cwd(), templatePath);
-    const outputFile = path.join(process.cwd(), `output/${templateKey}.json`);
+    const relativeTemplatePath = templatePaths[templateKey];
+    const inputPath = path.join(process.cwd(), relativeTemplatePath);
+    const outputDir = path.join(process.cwd(), "output");
+    const outputFile = path.join(outputDir, `${templateKey}.json`);
 
-    console.log("Input Path:", inputPath);
-    console.log("Output Path:", outputFile);
+    await fs.mkdir(outputDir, { recursive: true });
 
     // Save and read the template structure
     await saveTemplateStructureToJson(inputPath, outputFile);
     const result = await readTemplateStructureFromJson(outputFile);
 
-    // Validate the JSON structure before saving
+    // Validate the JSON structure before returning
     if (!validateJsonStructure(result.items)) {
       return Response.json({ error: "Invalid JSON structure" }, { status: 500 });
     }
 
-
-
-    await fs.unlink(outputFile);
+    try {
+      await fs.unlink(outputFile);
+    } catch {
+      // Ignore cleanup error
+    }
 
     return Response.json({ success: true, templateJson: result }, { status: 200 });
   } catch (error) {

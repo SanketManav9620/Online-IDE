@@ -26,26 +26,28 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
   const [error, setError] = useState<string | null>(null);
 
   const loadPlayground = useCallback(async () => {
-    if (!id) return;
+    const targetId = (!id || id === "undefined") ? "react" : id;
 
     try {
       setIsLoading(true);
       setError(null);
 
-      const data = await getPlaygroundById(id);
-    //   @ts-ignore
-      setPlaygroundData(data);
+      const data = await getPlaygroundById(targetId);
+      if (data) {
+        // @ts-ignore
+        setPlaygroundData(data);
 
-      const rawContent = data?.templateFiles?.[0]?.content;
-      if (typeof rawContent === "string") {
-        const parsedContent = JSON.parse(rawContent);
-        setTemplateData(parsedContent);
-        toast.success("Playground loaded successfully");
-        return;
+        const rawContent = data?.templateFiles?.[0]?.content;
+        if (typeof rawContent === "string") {
+          const parsedContent = JSON.parse(rawContent);
+          setTemplateData(parsedContent);
+          toast.success("Playground loaded successfully");
+          return;
+        }
       }
 
-      // Load template from API if not in saved content
-      const res = await fetch(`/api/template/${id}`);
+      // Load template from API if not in saved content or DB failed
+      const res = await fetch(`/api/template/${targetId}`);
       if (!res.ok) throw new Error(`Failed to load template: ${res.status}`);
 
       const templateRes = await res.json();

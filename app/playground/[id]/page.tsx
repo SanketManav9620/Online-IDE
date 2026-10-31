@@ -209,7 +209,7 @@ const MainPlaygroundPage: React.FC = () => {
         const updatedTemplateData = JSON.parse(
           JSON.stringify(latestTemplateData)
         );
-        const updateFileContent = (items: any[]) =>
+        const updateFileContent = (items: any[]): any[] =>
           items.map((item) => {
             if ("folderName" in item) {
               return { ...item, items: updateFileContent(item.items) };
@@ -227,16 +227,20 @@ const MainPlaygroundPage: React.FC = () => {
 
         // Sync with WebContainer
         if (writeFileSync) {
-          await writeFileSync(filePath, fileToSave.content);
-          lastSyncedContent.current.set(fileToSave.id, fileToSave.content);
-          if (instance && instance.fs) {
-            await instance.fs.writeFile(filePath, fileToSave.content);
+          try {
+            await writeFileSync(filePath, fileToSave.content);
+            lastSyncedContent.current.set(fileToSave.id, fileToSave.content);
+            if (instance && instance.fs) {
+              await instance.fs.writeFile(filePath, fileToSave.content);
+            }
+          } catch (wcErr) {
+            console.warn("WebContainer sync warning:", wcErr);
           }
         }
 
         // Use saveTemplateData to persist changes
-        const newTemplateData = await saveTemplateData(updatedTemplateData);
-        setTemplateData(newTemplateData || updatedTemplateData);
+        await saveTemplateData(updatedTemplateData);
+        setTemplateData(updatedTemplateData);
 
         // Update open files
         const updatedOpenFiles = openFiles.map((f) =>

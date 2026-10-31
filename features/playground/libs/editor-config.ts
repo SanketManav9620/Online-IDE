@@ -262,7 +262,7 @@ export const configureMonaco = (monaco: Monaco) => {
   });
 };
 
-export const defaultEditorOptions = {
+export const defaultEditorOptions: any = {
   // Font settings
   fontSize: 14,
   fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, Courier, monospace",

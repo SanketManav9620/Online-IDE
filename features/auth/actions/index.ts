@@ -4,30 +4,32 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 
 
-export const getUserById = async (id:string)=>{
+export const getUserById = async (id: string) => {
+    if (!id) return null;
     try {
         const user = await db.user.findUnique({
-            where:{id},
-            include:{accounts:true}
-        })
-        return user
+            where: { id },
+            include: { accounts: true }
+        });
+        return user;
     } catch (error) {
-        console.log(error)
-        return null
+        // Return null gracefully if DB is offline/unreachable
+        return null;
     }
 }
 
-export const getAccountByUserId = async (userId:string)=>{
+export const getAccountByUserId = async (userId: string) => {
+    if (!userId) return null;
     try {
         const account = await db.account.findFirst({
-            where:{
+            where: {
                 userId
             }
-        })
-        return account
+        });
+        return account;
     } catch (error) {
-        console.log(error)
-        return null
+        // Return null gracefully if DB is offline/unreachable
+        return null;
     }
 }
 

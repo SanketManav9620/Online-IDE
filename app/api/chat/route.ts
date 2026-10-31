@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { generateAIChat, generateAICompletion } from "@/lib/ai-provider"
 
 interface ChatMessage {
   role: "user" | "assistant"
@@ -25,56 +26,18 @@ async function generateAIResponse(messages: ChatMessage[]) {
 Always provide clear, practical answers. When showing code, use proper formatting with language-specific syntax.
 Keep responses concise but comprehensive. Use code blocks with language specification when providing code examples.`
 
-  const fullMessages = [{ role: "system", content: systemPrompt }, ...messages]
+  const chatMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ]
 
-  const prompt = fullMessages.map((msg) => `${msg.role}: ${msg.content}`).join("\n\n")
+  const response = await generateAIChat({
+    messages: chatMessages,
+    temperature: 0.7,
+    maxTokens: 1500,
+  })
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 15000)
-
-  try {
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "codellama:latest",
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          top_p: 0.9,
-          max_tokens: 1000,
-          num_predict: 1000,
-          repeat_penalty: 1.1,
-          context_length: 4096,
-        },
-      }),
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("Error from AI model API:", errorText)
-      throw new Error(`AI model API error: ${response.status} - ${errorText}`)
-    }
-
-    const data = await response.json()
-    if (!data.response) {
-      throw new Error("No response from AI model")
-    }
-    return data.response.trim()
-  } catch (error) {
-    clearTimeout(timeoutId)
-    if ((error as Error).name === "AbortError") {
-      throw new Error("Request timeout: AI model took too long to respond")
-    }
-    console.error("AI generation error:", error)
-    throw error
-  }
+  return response.trim()
 }
 
 async function enhancePrompt(request: EnhancePromptRequest) {
@@ -94,31 +57,15 @@ Enhanced prompt should:
 Return only the enhanced prompt, nothing else.`
 
   try {
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "codellama:latest",
-        prompt: enhancementPrompt,
-        stream: false,
-        options: {
-          temperature: 0.3,
-          max_tokens: 500,
-        },
-      }),
+    const enhanced = await generateAICompletion({
+      prompt: enhancementPrompt,
+      temperature: 0.3,
+      maxTokens: 500,
     })
-
-    if (!response.ok) {
-      throw new Error("Failed to enhance prompt")
-    }
-
-    const data = await response.json()
-    return data.response?.trim() || request.prompt
+    return enhanced?.trim() || request.prompt
   } catch (error) {
     console.error("Prompt enhancement error:", error)
-    return request.prompt // Return original if enhancement fails
+    return request.prompt
   }
 }
 

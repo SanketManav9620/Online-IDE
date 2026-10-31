@@ -17,20 +17,30 @@ const AddNewButton = () => {
   } | null>(null)
   const router = useRouter()
 
-  const handleSubmit = async(data: {
+  const handleSubmit = async (data: {
     title: string;
     template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "HONO" | "ANGULAR";
     description?: string;
   }) => {
-    setSelectedTemplate(data)
-    const res = await createPlayground(data);
-    toast("Playground created successfully");
-    // Here you would typically handle the creation of a new playground
-    // with the selected template data
-    console.log("Creating new playground:", data)
-    setIsModalOpen(false)
-    router.push(`/playground/${res?.id}`)
-  }
+    setSelectedTemplate(data);
+    setIsModalOpen(false);
+    toast("Creating playground...");
+
+    try {
+      const res = await createPlayground(data);
+      if (res?.id) {
+        toast.success("Playground created successfully");
+        router.push(`/playground/${res.id}`);
+        return;
+      }
+    } catch (e) {
+      // Suppress DB connection errors and fall back
+    }
+
+    // Fallback if DB is offline: load static template directly
+    toast.success("Opening template playground");
+    router.push(`/playground/${data.template.toLowerCase()}`);
+  };
 
   return (
     <>

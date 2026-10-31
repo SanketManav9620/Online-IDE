@@ -15,24 +15,49 @@ interface UseWebContainerReturn {
   destroy: () => void; // Added destroy function
 }
 
+let webcontainerInstance: WebContainer | null = null;
+let webcontainerPromise: Promise<WebContainer> | null = null;
+
+async function getWebContainer(): Promise<WebContainer> {
+  if (webcontainerInstance) {
+    return webcontainerInstance;
+  }
+  if (!webcontainerPromise) {
+    webcontainerPromise = WebContainer.boot()
+      .then((inst) => {
+        webcontainerInstance = inst;
+        return inst;
+      })
+      .catch((err) => {
+        webcontainerPromise = null;
+        throw err;
+      });
+  }
+  return webcontainerPromise;
+}
+
 export const useWebContainer = ({ templateData }: UseWebContainerProps): UseWebContainerReturn => {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(!webcontainerInstance);
   const [error, setError] = useState<string | null>(null);
-  const [instance, setInstance] = useState<WebContainer | null>(null);
+  const [instance, setInstance] = useState<WebContainer | null>(webcontainerInstance);
 
   useEffect(() => {
     let mounted = true;
 
     async function initializeWebContainer() {
       try {
-        const webcontainerInstance = await WebContainer.boot();
+        const webcontainerInstance = await getWebContainer();
         
         if (!mounted) return;
         
         setInstance(webcontainerInstance);
         setIsLoading(false);
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.message?.includes("Only a single WebContainer instance can be booted")) {
+          if (mounted) setIsLoading(false);
+          return;
+        }
         console.error('Failed to initialize WebContainer:', err);
         if (mounted) {
           setError(err instanceof Error ? err.message : 'Failed to initialize WebContainer');
@@ -45,15 +70,23 @@ export const useWebContainer = ({ templateData }: UseWebContainerProps): UseWebC
 
     return () => {
       mounted = false;
-      if (instance) {
-        instance.teardown();
-      }
     };
   }, []);
 
   const writeFileSync = useCallback(async (path: string, content: string): Promise<void> => {
-    if (!instance) {
-      throw new Error('WebContainer instance is not available');
+    let targetInstance = instance || webcontainerInstance;
+    if (!targetInstance) {
+      try {
+        targetInstance = await getWebContainer();
+      } catch (e) {
+        console.warn('WebContainer instance is not ready yet');
+        return;
+      }
+    }
+
+    if (!targetInstance) {
+      console.warn('WebContainer instance is not ready yet');
+      return;
     }
 
     try {
@@ -62,15 +95,14 @@ export const useWebContainer = ({ templateData }: UseWebContainerProps): UseWebC
       const folderPath = pathParts.slice(0, -1).join('/'); // Extract folder path
 
       if (folderPath) {
-        await instance.fs.mkdir(folderPath, { recursive: true }); // Create folder structure recursively
+        await targetInstance.fs.mkdir(folderPath, { recursive: true }); // Create folder structure recursively
       }
 
       // Write the file
-      await instance.fs.writeFile(path, content);
+      await targetInstance.fs.writeFile(path, content);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to write file';
       console.error(`Failed to write file at ${path}:`, err);
-      throw new Error(`Failed to write file at ${path}: ${errorMessage}`);
     }
   }, [instance]);
 

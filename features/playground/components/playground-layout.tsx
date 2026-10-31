@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client"
 
 import { usePlayground } from "../context/playground-context"

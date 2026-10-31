@@ -65,50 +65,34 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
   useEffect(() => {
     async function setupContainer() {
       // Don't run setup if it's already complete or in progress
-      if (!instance || isSetupComplete || isSetupInProgress) return;
+      if (!instance || isSetupComplete || isSetupInProgress || !templateData) return;
 
       try {
         setIsSetupInProgress(true);
         setSetupError(null);
-        
-        // Check if server is already running by testing if files are already mounted
-        try {
-          const packageJsonExists = await instance.fs.readFile('package.json', 'utf8');
-          if (packageJsonExists) {
-            // Files are already mounted, just reconnect to existing server
-            if (terminalRef.current?.writeToTerminal) {
-              terminalRef.current.writeToTerminal("🔄 Reconnecting to existing WebContainer session...\r\n");
-            }
-            
-            // Check if server is already running
-            instance.on("server-ready", (port: number, url: string) => {
-              console.log(`Reconnected to server on port ${port} at ${url}`);
-              if (terminalRef.current?.writeToTerminal) {
-                terminalRef.current.writeToTerminal(`🌐 Reconnected to server at ${url}\r\n`);
-              }
-              setPreviewUrl(url);
-              setLoadingState((prev) => ({
-                ...prev,
-                starting: false,
-                ready: true,
-              }));
-              setIsSetupComplete(true);
-              setIsSetupInProgress(false);
-            });
-            
-            setCurrentStep(4);
-            setLoadingState((prev) => ({ ...prev, starting: true }));
-            return;
+
+        // Listen for server ready event BEFORE starting processes
+        instance.on("server-ready", (port: number, url: string) => {
+          console.log(`Server ready on port ${port} at ${url}`);
+          if (terminalRef.current?.writeToTerminal) {
+            terminalRef.current.writeToTerminal(`🌐 Server ready at ${url}\r\n`);
           }
-        } catch (e) {
-          // Files don't exist, proceed with normal setup
-        }
-        
+          setPreviewUrl(url);
+          setLoadingState({
+            transforming: false,
+            mounting: false,
+            installing: false,
+            starting: false,
+            ready: true,
+          });
+          setIsSetupComplete(true);
+          setIsSetupInProgress(false);
+        });
+
         // Step 1: Transform data
         setLoadingState((prev) => ({ ...prev, transforming: true }));
         setCurrentStep(1);
-        
-        // Write to terminal
+
         if (terminalRef.current?.writeToTerminal) {
           terminalRef.current.writeToTerminal("🔄 Transforming template data...\r\n");
         }
@@ -116,6 +100,7 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
         // @ts-ignore
         const files = transformToWebContainerFormat(templateData);
 
+        // Step 2: Mount files
         setLoadingState((prev) => ({
           ...prev,
           transforming: false,
@@ -123,17 +108,17 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
         }));
         setCurrentStep(2);
 
-        // Step 2: Mount files
         if (terminalRef.current?.writeToTerminal) {
           terminalRef.current.writeToTerminal("📁 Mounting files to WebContainer...\r\n");
         }
-        
+
         await instance.mount(files);
-        
+
         if (terminalRef.current?.writeToTerminal) {
           terminalRef.current.writeToTerminal("✅ Files mounted successfully\r\n");
         }
 
+        // Step 3: Install dependencies
         setLoadingState((prev) => ({
           ...prev,
           mounting: false,
@@ -141,18 +126,16 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
         }));
         setCurrentStep(3);
 
-        // Step 3: Install dependencies
         if (terminalRef.current?.writeToTerminal) {
           terminalRef.current.writeToTerminal("📦 Installing dependencies...\r\n");
         }
-        
+
         const installProcess = await instance.spawn("npm", ["install"]);
 
         // Stream install output to terminal
         installProcess.output.pipeTo(
           new WritableStream({
             write(data) {
-              // Write directly to terminal
               if (terminalRef.current?.writeToTerminal) {
                 terminalRef.current.writeToTerminal(data);
               }
@@ -170,6 +153,7 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
           terminalRef.current.writeToTerminal("✅ Dependencies installed successfully\r\n");
         }
 
+        // Step 4: Start the server
         setLoadingState((prev) => ({
           ...prev,
           installing: false,
@@ -177,28 +161,11 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
         }));
         setCurrentStep(4);
 
-        // Step 4: Start the server
         if (terminalRef.current?.writeToTerminal) {
           terminalRef.current.writeToTerminal("🚀 Starting development server...\r\n");
         }
-        
-        const startProcess = await instance.spawn("npm", ["run", "start"]);
 
-        // Listen for server ready event
-        instance.on("server-ready", (port: number, url: string) => {
-          console.log(`Server ready on port ${port} at ${url}`);
-          if (terminalRef.current?.writeToTerminal) {
-            terminalRef.current.writeToTerminal(`🌐 Server ready at ${url}\r\n`);
-          }
-          setPreviewUrl(url);
-          setLoadingState((prev) => ({
-            ...prev,
-            starting: false,
-            ready: true,
-          }));
-          setIsSetupComplete(true);
-          setIsSetupInProgress(false);
-        });
+        const startProcess = await instance.spawn("npm", ["run", "start"]);
 
         // Handle start process output - stream to terminal
         startProcess.output.pipeTo(
@@ -214,11 +181,11 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
       } catch (err) {
         console.error("Error setting up container:", err);
         const errorMessage = err instanceof Error ? err.message : String(err);
-        
+
         if (terminalRef.current?.writeToTerminal) {
           terminalRef.current.writeToTerminal(`❌ Error: ${errorMessage}\r\n`);
         }
-        
+
         setSetupError(errorMessage);
         setIsSetupInProgress(false);
         setLoadingState({

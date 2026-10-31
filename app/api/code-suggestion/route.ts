@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { generateAICompletion } from "@/lib/ai-provider"
 
 interface CodeSuggestionRequest {
   fileContent: string
@@ -35,10 +36,10 @@ export async function POST(request: NextRequest) {
     const context = analyzeCodeContext(fileContent, cursorLine, cursorColumn, fileName)
 
     // Build AI prompt
-    const prompt = buildPrompt(context, suggestionType)
+    const { systemPrompt, prompt } = buildPrompt(context, suggestionType)
 
-    // Call AI service (replace with your AI service)
-    const suggestion = await generateSuggestion(prompt)
+    // Call AI service
+    const suggestion = await generateSuggestion(systemPrompt, prompt, context)
 
     return NextResponse.json({
       suggestion,
@@ -98,15 +99,25 @@ function analyzeCodeContext(content: string, line: number, column: number, fileN
 /**
  * Build AI prompt based on context
  */
-function buildPrompt(context: CodeContext, suggestionType: string): string {
-  return `You are an expert code completion assistant. Generate a ${suggestionType} suggestion.
+function buildPrompt(context: CodeContext, suggestionType: string): { systemPrompt: string; prompt: string } {
+  const systemPrompt = `You are an ultra-fast, highly accurate code completion assistant.
+Instructions:
+1. Provide ONLY the precise code snippet that should be inserted directly at the |CURSOR| position.
+2. Do NOT output markdown formatting (do NOT use \`\`\` code fences).
+3. Do NOT repeat code that is already written before the cursor.
+4. Do NOT include explanations, greetings, or conversational remarks.
+5. Respect the existing indentation, conventions, and style of the file.`
 
-Language: ${context.language}
+  const prefix = context.currentLine.substring(0, context.cursorPosition.column)
+  const suffix = context.currentLine.substring(context.cursorPosition.column)
+
+  const prompt = `Language: ${context.language}
 Framework: ${context.framework}
+Suggestion Type: ${suggestionType}
 
-Context:
+Code Context:
 ${context.beforeContext}
-${context.currentLine.substring(0, context.cursorPosition.column)}|CURSOR|${context.currentLine.substring(context.cursorPosition.column)}
+${prefix}|CURSOR|${suffix}
 ${context.afterContext}
 
 Analysis:
@@ -115,54 +126,53 @@ Analysis:
 - After Comment: ${context.isAfterComment}
 - Incomplete Patterns: ${context.incompletePatterns.join(", ") || "None"}
 
-Instructions:
-1. Provide only the code that should be inserted at the cursor
-2. Maintain proper indentation and style
-3. Follow ${context.language} best practices
-4. Make the suggestion contextually appropriate
+Provide only the completion to insert at |CURSOR|:`
 
-Generate suggestion:`
+  return { systemPrompt, prompt }
 }
 
 /**
- * Generate suggestion using AI service
+ * Generate suggestion using unified AI service
  */
-async function generateSuggestion(prompt: string): Promise<string> {
+async function generateSuggestion(
+  systemPrompt: string,
+  prompt: string,
+  context: CodeContext
+): Promise<string> {
   try {
-    // Replace this with your actual AI service call
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "codellama:latest",
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          max_tokens: 300,
-        },
-      }),
+    let suggestion = await generateAICompletion({
+      systemPrompt,
+      prompt,
+      temperature: 0.1, // low temperature ensures accurate, deterministic syntax
+      maxTokens: 200,
     })
 
-    if (!response.ok) {
-      throw new Error(`AI service error: ${response.statusText}`)
+    if (!suggestion) {
+      return ""
     }
 
-    const data = await response.json()
-    let suggestion = data.response
-
-    // Clean up the suggestion
+    // Clean up markdown code blocks if the model wrapped it
     if (suggestion.includes("```")) {
       const codeMatch = suggestion.match(/```[\w]*\n?([\s\S]*?)```/)
-      suggestion = codeMatch ? codeMatch[1].trim() : suggestion
+      suggestion = codeMatch ? codeMatch[1] : suggestion.replace(/```/g, "")
     }
 
     // Remove cursor markers if present
-    suggestion = suggestion.replace(/\|CURSOR\|/g, "").trim()
+    suggestion = suggestion.replace(/\|CURSOR\|/g, "").replace(/\r/g, "")
 
-    return suggestion
-  } catch (error) {
-    console.error("AI generation error:", error)
+    // Strip leading text if the model echoed the line prefix
+    const linePrefix = context.currentLine.substring(0, context.cursorPosition.column).trimStart()
+    if (linePrefix && suggestion.trimStart().startsWith(linePrefix)) {
+      const trimmedPrefix = linePrefix.trim()
+      const idx = suggestion.indexOf(trimmedPrefix)
+      if (idx !== -1) {
+        suggestion = suggestion.substring(idx + trimmedPrefix.length)
+      }
+    }
+
+    return suggestion.trimEnd()
+  } catch (error: any) {
+    console.error("AI generation error details:", error?.message || error)
     return "// AI suggestion unavailable"
   }
 }
@@ -181,6 +191,10 @@ function detectLanguage(content: string, fileName?: string): string {
       go: "Go",
       rs: "Rust",
       php: "PHP",
+      html: "HTML",
+      css: "CSS",
+      json: "JSON",
+      sql: "SQL",
     }
     if (ext && extMap[ext]) return extMap[ext]
   }
@@ -236,12 +250,4 @@ function detectIncompletePatterns(line: string, column: number): string[] {
   if (/\.\s*$/.test(beforeCursor)) patterns.push("method-call")
 
   return patterns
-}
-
-function getLastNonEmptyLine(lines: string[], currentLine: number): string {
-  for (let i = currentLine - 1; i >= 0; i--) {
-    const line = lines[i]
-    if (line.trim() !== "") return line
-  }
-  return ""
 }

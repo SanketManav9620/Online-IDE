@@ -67,50 +67,53 @@ export const createPlayground = async (data:{
 }
 
 
-export const getAllPlaygroundForUser = async ()=>{
-    const user = await currentUser();
+export const getAllPlaygroundForUser = async () => {
     try {
-        const user  = await currentUser();
+        const user = await currentUser();
+        if (!user || !user.id) return [];
+
         const playground = await db.playground.findMany({
-            where:{
-                userId:user?.id!
+            where: {
+                userId: user.id
             },
-            include:{
-                user:true,
-                Starmark:{
-                    where:{
-                        userId:user?.id!
+            include: {
+                user: true,
+                Starmark: {
+                    where: {
+                        userId: user.id
                     },
-                    select:{
-                        isMarked:true
+                    select: {
+                        isMarked: true
                     }
                 }
             }
-        })
+        });
       
-        return playground;
+        return playground || [];
     } catch (error) {
-        console.log(error)
+        return [];
     }
 }
 
-export const getPlaygroundById = async (id:string)=>{
+export const getPlaygroundById = async (id: string) => {
+    if (!id || id === "undefined") return null;
     try {
         const playground = await db.playground.findUnique({
-            where:{id},
-            select:{
-              templateFiles:{
-                select:{
-                  content:true
+            where: { id },
+            select: {
+              templateFiles: {
+                select: {
+                  content: true
                 }
               }
             }
-        })
+        });
         return playground;
     } catch (error) {
-        console.log(error)
+        console.warn("getPlaygroundById DB lookup skipped/failed:", error);
+        return null;
     }
-}
+};
 
 export const SaveUpdatedCode = async (playgroundId: string, data: TemplateFolder) => {
   const user = await currentUser();
