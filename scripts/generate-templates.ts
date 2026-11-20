@@ -32,3 +32,4 @@ generate().catch(err => {
   console.error('Error generating templates:', err);
   process.exit(1);
 });
+
